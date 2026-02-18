@@ -2,20 +2,13 @@ import streamlit as st
 import numpy as np
 import cv2
 import os
-import mediapipe as mp   
 from tensorflow.keras.models import load_model
 from PIL import Image
-
 
 # -------------------------
 # Page Config
 # -------------------------
 st.set_page_config(page_title="AI Face Mask Detection", layout="wide")
-
-# -------------------------
-# Detect Cloud Environment
-# -------------------------
-IS_CLOUD = os.getenv("STREAMLIT_SHARING_MODE") == "true"
 
 # -------------------------
 # Sidebar
@@ -24,13 +17,12 @@ st.sidebar.title("📦 Project Info")
 st.sidebar.markdown("""
 **Model:** MobileNetV2  
 **Framework:** TensorFlow  
-**Face Detection:** MediaPipe  
+**Face Detection:** Haar Cascade  
 **Deployment:** Streamlit Cloud  
 **Developer:** Shivam 🚀  
 """)
 
 mode = st.sidebar.radio("Choose Mode", ["Upload Image"])
-
 theme_toggle = st.sidebar.toggle("🌙 Dark Mode", value=True)
 
 # -------------------------
@@ -63,14 +55,10 @@ model = load_trained_model()
 IMG_SIZE = 224
 
 # -------------------------
-# MediaPipe Setup
+# Haar Cascade Setup
 # -------------------------
-mp_face = mp.solutions.face_detection
-mp_drawing = mp.solutions.drawing_utils
-
-face_detection = mp_face.FaceDetection(
-    model_selection=1,
-    min_detection_confidence=0.5
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
 # -------------------------
@@ -85,21 +73,23 @@ if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     img_np = np.array(image)
 
-    results = face_detection.process(img_np)
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
 
-    if results.detections:
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(60, 60)
+    )
 
-        for detection in results.detections:
-            bbox = detection.location_data.relative_bounding_box
+    if len(faces) == 0:
+        st.warning("⚠ No face detected in the image.")
+        st.image(img_np, caption="Uploaded Image", width="stretch")
 
-            h, w, _ = img_np.shape
-            x = int(bbox.xmin * w)
-            y = int(bbox.ymin * h)
-            width = int(bbox.width * w)
-            height = int(bbox.height * h)
+    else:
+        for (x, y, w, h) in faces:
 
-            # Crop face
-            face = img_np[y:y+height, x:x+width]
+            face = img_np[y:y+h, x:x+w]
 
             if face.size == 0:
                 continue
@@ -113,14 +103,9 @@ if uploaded_file:
             label = "Mask" if prediction < 0.5 else "No Mask"
             color = (0,255,0) if prediction < 0.5 else (255,0,0)
 
-            # Draw box
-            cv2.rectangle(img_np, (x,y), (x+width,y+height), color, 3)
+            cv2.rectangle(img_np, (x,y), (x+w,y+h), color, 3)
             cv2.putText(img_np, label, (x,y-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
         st.success("Face detected successfully!")
         st.image(img_np, caption="Processed Image", width="stretch")
-
-    else:
-        st.warning("⚠ No face detected in the image.")
-        st.image(img_np, caption="Uploaded Image", width="stretch")
