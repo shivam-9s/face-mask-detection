@@ -1,15 +1,19 @@
 import streamlit as st
 import numpy as np
 import cv2
+import os
 from tensorflow.keras.models import load_model
 from PIL import Image
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
-import av
 
 # -------------------------
 # Page Config
 # -------------------------
 st.set_page_config(page_title="AI Face Mask Detection", layout="wide")
+
+# -------------------------
+# Detect Cloud Environment
+# -------------------------
+IS_CLOUD = os.getenv("STREAMLIT_SHARING_MODE") == "true"
 
 # -------------------------
 # Sidebar
@@ -22,7 +26,11 @@ st.sidebar.markdown("""
 **Developer:** Shivam 🚀  
 """)
 
-mode = st.sidebar.radio("Choose Mode", ["Upload Image", "Live Webcam"])
+if IS_CLOUD:
+    mode = st.sidebar.radio("Choose Mode", ["Upload Image"])
+    st.sidebar.warning("⚠ Live webcam disabled on Streamlit Cloud")
+else:
+    mode = st.sidebar.radio("Choose Mode", ["Upload Image", "Live Webcam"])
 
 theme_toggle = st.sidebar.toggle("🌙 Dark Mode", value=True)
 
@@ -63,7 +71,7 @@ body {{
 """, unsafe_allow_html=True)
 
 # -------------------------
-# Load Model
+# Load Model (Cached)
 # -------------------------
 @st.cache_resource
 def load_trained_model():
@@ -99,9 +107,9 @@ if mode == "Upload Image":
             face = img_np[y:y+h, x:x+w]
             face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
             face = face / 255.0
-            face = np.reshape(face, (1, IMG_SIZE, IMG_SIZE, 3))
+            face = np.expand_dims(face, axis=0)
 
-            prediction = model.predict(face)[0][0]
+            prediction = model.predict(face, verbose=0)[0][0]
 
             label = "Mask" if prediction < 0.5 else "No Mask"
             color = (0,255,0) if prediction < 0.5 else (255,0,0)
@@ -113,31 +121,34 @@ if mode == "Upload Image":
         st.image(img_np, caption="Processed Image", use_container_width=True)
 
 # -------------------------
-# WEBCAM MODE
+# WEBCAM MODE (Local Only)
 # -------------------------
-class VideoProcessor(VideoTransformerBase):
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+if not IS_CLOUD and mode == "Live Webcam":
 
-        for (x,y,w,h) in faces:
-            face = img[y:y+h, x:x+w]
-            face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
-            face = face / 255.0
-            face = np.reshape(face, (1, IMG_SIZE, IMG_SIZE, 3))
+    from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
-            prediction = model.predict(face)[0][0]
+    class VideoProcessor(VideoTransformerBase):
+        def transform(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-            label = "Mask" if prediction < 0.5 else "No Mask"
-            color = (0,255,0) if prediction < 0.5 else (0,0,255)
+            for (x,y,w,h) in faces:
+                face = img[y:y+h, x:x+w]
+                face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
+                face = face / 255.0
+                face = np.expand_dims(face, axis=0)
 
-            cv2.rectangle(img, (x,y), (x+w,y+h), color, 3)
-            cv2.putText(img, label, (x,y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                prediction = model.predict(face, verbose=0)[0][0]
 
-        return img
+                label = "Mask" if prediction < 0.5 else "No Mask"
+                color = (0,255,0) if prediction < 0.5 else (0,0,255)
 
-if mode == "Live Webcam":
-    st.title("🎥 Live Mask Detection")
+                cv2.rectangle(img, (x,y), (x+w,y+h), color, 3)
+                cv2.putText(img, label, (x,y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+            return img
+
+    st.title("🎥 Live Mask Detection (Local Only)")
     webrtc_streamer(key="mask-detection", video_processor_factory=VideoProcessor)
