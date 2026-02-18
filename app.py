@@ -8,55 +8,83 @@ from PIL import Image
 # Page Config
 # -----------------------------
 st.set_page_config(
-    page_title="Face Mask Detection",
+    page_title="AI Face Mask Detector",
     page_icon="😷",
     layout="centered"
 )
 
 # -----------------------------
-# Custom CSS
+# Custom Premium CSS
 # -----------------------------
 st.markdown("""
 <style>
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+html, body, [class*="css"]  {
+    font-family: 'Poppins', sans-serif;
+}
+
 body {
-    background-color: #0e1117;
+    background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364, #1f1c2c);
+    background-size: 400% 400%;
+    animation: gradientBG 12s ease infinite;
+}
+
+@keyframes gradientBG {
+    0% {background-position: 0% 50%;}
+    50% {background-position: 100% 50%;}
+    100% {background-position: 0% 50%;}
 }
 
 .main {
-    background: linear-gradient(135deg, #1f2937, #111827);
-    border-radius: 15px;
-    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 25px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
 }
 
 h1 {
     text-align: center;
-    color: #00f2fe;
-    font-weight: 700;
+    font-size: 42px;
+    font-weight: 600;
+    background: linear-gradient(90deg, #00f2fe, #4facfe);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .stFileUploader {
-    background-color: #1f2937;
+    background: rgba(255,255,255,0.1);
     padding: 15px;
-    border-radius: 10px;
+    border-radius: 15px;
+    border: 1px solid rgba(255,255,255,0.2);
 }
 
-.pred-box {
-    padding: 15px;
-    border-radius: 12px;
-    font-size: 20px;
+.pred-card {
+    padding: 20px;
+    border-radius: 15px;
+    font-size: 22px;
     text-align: center;
-    font-weight: bold;
+    font-weight: 500;
+    margin-top: 20px;
+    transition: 0.3s ease-in-out;
 }
 
-.success-box {
-    background-color: #065f46;
-    color: white;
+.success {
+    background: rgba(16,185,129,0.2);
+    color: #10b981;
+    border: 1px solid #10b981;
 }
 
-.error-box {
-    background-color: #7f1d1d;
-    color: white;
+.error {
+    background: rgba(239,68,68,0.2);
+    color: #ef4444;
+    border: 1px solid #ef4444;
 }
+
+footer {visibility: hidden;}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -74,8 +102,12 @@ IMG_SIZE = 224
 # -----------------------------
 # UI
 # -----------------------------
-st.title("😷 Face Mask Detection App")
-st.write("Upload an image to check whether the person is wearing a mask.")
+st.title("🤖 AI Face Mask Detection")
+
+st.markdown(
+    "<p style='text-align:center; color: #ccc;'>Upload an image to detect whether a person is wearing a mask.</p>",
+    unsafe_allow_html=True
+)
 
 uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
 
@@ -89,29 +121,30 @@ if uploaded_file is not None:
     img = img / 255.0
     img = np.reshape(img, (1, IMG_SIZE, IMG_SIZE, 3))
 
-    with st.spinner("Analyzing Image..."):
+    with st.spinner("🧠 AI is analyzing the image..."):
         prediction = model.predict(img)[0][0]
 
-    st.subheader("Prediction Result")
+    confidence = round((1 - prediction) * 100, 2) if prediction < 0.5 else round(prediction * 100, 2)
 
     if prediction > 0.5:
-        confidence = round(prediction * 100, 2)
         st.markdown(f"""
-        <div class="pred-box error-box">
-        ❌ No Mask Detected<br>
+        <div class="pred-card error">
+        ❌ No Mask Detected <br>
         Confidence: {confidence}%
         </div>
         """, unsafe_allow_html=True)
     else:
-        confidence = round((1 - prediction) * 100, 2)
         st.markdown(f"""
-        <div class="pred-box success-box">
-        ✅ Mask Detected<br>
+        <div class="pred-card success">
+        ✅ Mask Detected <br>
         Confidence: {confidence}%
         </div>
         """, unsafe_allow_html=True)
 
     st.progress(int(confidence))
 
-st.markdown("<hr>", unsafe_allow_html=True)
-st.caption("🚀 Built with MobileNetV2 | Streamlit | Deep Learning")
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown(
+    "<p style='text-align:center; font-size:14px; color:#aaa;'>Built with ❤️ using MobileNetV2 & Streamlit</p>",
+    unsafe_allow_html=True
+)
