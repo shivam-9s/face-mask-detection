@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import cv2
 import os
-import mediapipe as mp
 from tensorflow.keras.models import load_model
 from PIL import Image
 
