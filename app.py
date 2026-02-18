@@ -1,10 +1,9 @@
 import streamlit as st
 import numpy as np
-import cv2
 import os
 import mediapipe as mp
 from tensorflow.keras.models import load_model
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -27,7 +26,6 @@ st.sidebar.markdown("""
 **Developer:** Shivam 🚀  
 """)
 
-mode = st.sidebar.radio("Choose Mode", ["Upload Image"])
 dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=True)
 
 # ---------------------------------------------------
@@ -50,7 +48,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# LOAD MODEL (CACHED)
+# LOAD MODEL
 # ---------------------------------------------------
 @st.cache_resource
 def load_trained_model():
@@ -60,52 +58,41 @@ model = load_trained_model()
 IMG_SIZE = 224
 
 # ---------------------------------------------------
-# MEDIAPIPE FACE DETECTOR (CACHED)
+# LOAD MEDIAPIPE
 # ---------------------------------------------------
 @st.cache_resource
 def load_face_detector():
     mp_face = mp.solutions.face_detection
     return mp_face.FaceDetection(
         model_selection=1,
-        min_detection_confidence=0.3  # Reduced for masked faces
+        min_detection_confidence=0.3
     )
 
 face_detector = load_face_detector()
 
 # ---------------------------------------------------
-# MAIN TITLE
+# MAIN
 # ---------------------------------------------------
 st.title("😷 AI Face Mask Detection")
-st.markdown("Upload an image to detect whether a person is wearing a mask.")
-
-# ---------------------------------------------------
-# IMAGE UPLOAD
-# ---------------------------------------------------
-uploaded_file = st.file_uploader(
-    "Upload Image",
-    type=["jpg", "jpeg", "png"]
-)
+uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
 
-    # Load Image
     image = Image.open(uploaded_file).convert("RGB")
     img_np = np.array(image)
 
-    # Convert to RGB for MediaPipe
-    img_rgb = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-
-    # Detect Faces
-    results = face_detector.process(img_rgb)
+    results = face_detector.process(img_np)
 
     if results.detections:
+
+        draw = ImageDraw.Draw(image)
 
         for detection in results.detections:
             bbox = detection.location_data.relative_bounding_box
 
-            h, w, _ = img_np.shape
-            x = max(0, int(bbox.xmin * w))
-            y = max(0, int(bbox.ymin * h))
+            w, h = image.size
+            x = int(bbox.xmin * w)
+            y = int(bbox.ymin * h)
             width = int(bbox.width * w)
             height = int(bbox.height * h)
 
@@ -114,35 +101,35 @@ if uploaded_file:
             if face.size == 0:
                 continue
 
-            # Preprocess for model
-            face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
-            face = face / 255.0
-            face = np.expand_dims(face, axis=0)
+            # Resize using PIL instead of cv2
+            face_pil = Image.fromarray(face).resize((IMG_SIZE, IMG_SIZE))
+            face_array = np.array(face_pil) / 255.0
+            face_array = np.expand_dims(face_array, axis=0)
 
-            prediction = model.predict(face, verbose=0)[0][0]
+            prediction = model.predict(face_array, verbose=0)[0][0]
 
             label = "Mask" if prediction < 0.5 else "No Mask"
             confidence = round(float(1 - prediction if prediction < 0.5 else prediction) * 100, 2)
 
-            color = (0, 255, 0) if label == "Mask" else (255, 0, 0)
+            color = "green" if label == "Mask" else "red"
 
-            # Draw Bounding Box
-            cv2.rectangle(img_np, (x, y), (x + width, y + height), color, 3)
+            # Draw rectangle
+            draw.rectangle(
+                [x, y, x + width, y + height],
+                outline=color,
+                width=4
+            )
 
-            # Put Label
-            cv2.putText(
-                img_np,
+            # Draw label
+            draw.text(
+                (x, y - 20),
                 f"{label} ({confidence}%)",
-                (x, y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.9,
-                color,
-                2
+                fill=color
             )
 
         st.success("✅ Face detected successfully!")
-        st.image(img_np, caption="Processed Image", use_container_width=True)
+        st.image(image, use_container_width=True)
 
     else:
-        st.warning("⚠ No face detected in the image.")
-        st.image(img_np, caption="Uploaded Image", use_container_width=True)
+        st.warning("⚠ No face detected.")
+        st.image(image, use_container_width=True)
