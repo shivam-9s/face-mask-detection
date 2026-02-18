@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import cv2
-import os
 from tensorflow.keras.models import load_model
 from PIL import Image
 
@@ -9,11 +8,6 @@ from PIL import Image
 # Page Config
 # -------------------------
 st.set_page_config(page_title="AI Face Mask Detection", layout="wide")
-
-# -------------------------
-# Detect Cloud Environment
-# -------------------------
-IS_CLOUD = os.getenv("STREAMLIT_SHARING_MODE") == "true"
 
 # -------------------------
 # Sidebar
@@ -26,11 +20,7 @@ st.sidebar.markdown("""
 **Developer:** Shivam 🚀  
 """)
 
-if IS_CLOUD:
-    mode = st.sidebar.radio("Choose Mode", ["Upload Image"])
-    st.sidebar.warning("⚠ Live webcam disabled on Streamlit Cloud")
-else:
-    mode = st.sidebar.radio("Choose Mode", ["Upload Image", "Live Webcam"])
+st.sidebar.success("✅ Live Webcam disabled for Cloud stability")
 
 theme_toggle = st.sidebar.toggle("🌙 Dark Mode", value=True)
 
@@ -49,6 +39,24 @@ st.markdown(f"""
 body {{
     background-color: {bg};
     color: {text};
+}}
+
+.conf-box {{
+    padding: 15px;
+    border-radius: 12px;
+    text-align: center;
+    font-size: 20px;
+    margin-top: 15px;
+}}
+
+.success {{
+    background-color: rgba(16,185,129,0.2);
+    border: 1px solid #10b981;
+}}
+
+.error {{
+    background-color: rgba(239,68,68,0.2);
+    border: 1px solid #ef4444;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -70,124 +78,55 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
-# =========================
-# IMAGE MODE
-# =========================
-if mode == "Upload Image":
+# -------------------------
+# MAIN UI
+# -------------------------
+st.title("😷 AI Face Mask Detection")
 
-    st.title("😷 AI Face Mask Detection")
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
-    uploaded_file = st.file_uploader(
-        "Upload Image", 
-        type=["jpg", "png", "jpeg"]
-    )
+if uploaded_file:
+    image = Image.open(uploaded_file).convert("RGB")
+    img_np = np.array(image)
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
 
-    if uploaded_file:
-        image = Image.open(uploaded_file).convert("RGB")
-        img_np = np.array(image)
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-        # Improved detection parameters
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=4,
-            minSize=(60, 60)
+    if len(faces) == 0:
+        st.warning("⚠ No face detected in the image.")
+        st.image(img_np, caption="Uploaded Image", width="stretch")
+    else:
+        for (x, y, w, h) in faces:
+            face = img_np[y:y+h, x:x+w]
+            face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
+            face = face / 255.0
+            face = np.expand_dims(face, axis=0)
+
+            prediction = model.predict(face, verbose=0)[0][0]
+
+            if prediction < 0.5:
+                label = "Mask"
+                confidence = (1 - prediction) * 100
+                color = (0, 255, 0)
+                box_class = "success"
+            else:
+                label = "No Mask"
+                confidence = prediction * 100
+                color = (255, 0, 0)
+                box_class = "error"
+
+            cv2.rectangle(img_np, (x, y), (x+w, y+h), color, 3)
+            cv2.putText(img_np,
+                        f"{label} ({confidence:.2f}%)",
+                        (x, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        color,
+                        2)
+
+        st.image(img_np, caption="Processed Image", width="stretch")
+
+        st.markdown(
+            f"<div class='conf-box {box_class}'>Prediction: {label} ({confidence:.2f}% confidence)</div>",
+            unsafe_allow_html=True
         )
-
-        if len(faces) == 0:
-            st.warning("⚠ No face detected in image")
-            st.image(img_np, caption="Uploaded Image", width="stretch")
-        else:
-            for (x, y, w, h) in faces:
-                face = img_np[y:y+h, x:x+w]
-                face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
-                face = face / 255.0
-                face = np.expand_dims(face, axis=0)
-
-                prediction = model.predict(face, verbose=0)[0][0]
-
-                if prediction < 0.5:
-                    label = "Mask 😷"
-                    color = (0, 255, 0)
-                    confidence = (1 - prediction) * 100
-                else:
-                    label = "No Mask ❌"
-                    color = (255, 0, 0)
-                    confidence = prediction * 100
-
-                # Draw bounding box
-                cv2.rectangle(img_np, (x, y), (x+w, y+h), color, 3)
-                cv2.putText(
-                    img_np,
-                    f"{label} ({confidence:.2f}%)",
-                    (x, y-15),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    color,
-                    2
-                )
-
-                # Show result box
-                if prediction < 0.5:
-                    st.success(f"Prediction: {label}")
-                else:
-                    st.error(f"Prediction: {label}")
-
-                st.info(f"Confidence: {confidence:.2f}%")
-
-            st.image(img_np, caption="Processed Image", width="stretch")
-
-
-# =========================
-# WEBCAM MODE (Local Only)
-# =========================
-if not IS_CLOUD and mode == "Live Webcam":
-
-    from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
-
-    class VideoProcessor(VideoTransformerBase):
-        def transform(self, frame):
-            img = frame.to_ndarray(format="bgr24")
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-            faces = face_cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.1,
-                minNeighbors=4,
-                minSize=(60, 60)
-            )
-
-            for (x, y, w, h) in faces:
-                face = img[y:y+h, x:x+w]
-                face = cv2.resize(face, (IMG_SIZE, IMG_SIZE))
-                face = face / 255.0
-                face = np.expand_dims(face, axis=0)
-
-                prediction = model.predict(face, verbose=0)[0][0]
-
-                if prediction < 0.5:
-                    label = "Mask 😷"
-                    color = (0, 255, 0)
-                else:
-                    label = "No Mask ❌"
-                    color = (0, 0, 255)
-
-                cv2.rectangle(img, (x, y), (x+w, y+h), color, 3)
-                cv2.putText(
-                    img,
-                    label,
-                    (x, y-10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    color,
-                    2
-                )
-
-            return img
-
-    st.title("🎥 Live Mask Detection (Local Only)")
-    webrtc_streamer(
-        key="mask-detection",
-        video_processor_factory=VideoProcessor
-    )
